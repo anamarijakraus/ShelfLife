@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.shelflife.backend.link.LinkRepositoryTest
+-------------------------------------------------------------------------------
+Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.388 s -- in com.shelflife.backend.link.LinkRepositoryTest
