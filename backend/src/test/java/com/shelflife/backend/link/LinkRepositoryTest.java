@@ -76,6 +76,92 @@ class LinkRepositoryTest {
     }
 
     @Test
+    void ordersMultipleGraveyardLinksBySoonestToBePermanentlyDeletedFirst() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Instant graveyardThreshold = now.minus(30, ChronoUnit.DAYS);
+
+        Link deletedSoonest = linkRepository.save(new Link(
+                "https://soonest.example.com", now.minus(200, ChronoUnit.HOURS), now.minus(29, ChronoUnit.DAYS)));
+        Link deletedMiddle = linkRepository.save(new Link(
+                "https://middle.example.com", now.minus(200, ChronoUnit.HOURS), now.minus(15, ChronoUnit.DAYS)));
+        Link deletedLatest = linkRepository.save(new Link(
+                "https://latest.example.com", now.minus(200, ChronoUnit.HOURS), now.minus(1, ChronoUnit.DAYS)));
+
+        List<Link> graveyard = linkRepository.findByExpiresAtLessThanEqualAndExpiresAtAfterOrderByExpiresAtAsc(
+                now, graveyardThreshold);
+
+        assertThat(graveyard).extracting(Link::getId)
+                .containsExactly(deletedSoonest.getId(), deletedMiddle.getId(), deletedLatest.getId());
+    }
+
+    @Test
+    void bulkDeleteAndGraveyardRangeQueryTreatBoundariesCorrectly() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Instant graveyardThreshold = now.minus(30, ChronoUnit.DAYS);
+
+        Link almostDue = linkRepository.save(new Link(
+                "https://almost-due.example.com", now.minus(200, ChronoUnit.HOURS),
+                now.minus(29, ChronoUnit.DAYS).minus(23, ChronoUnit.HOURS).minus(59, ChronoUnit.MINUTES)));
+        Link exactlyDue = linkRepository.save(new Link(
+                "https://exactly-due.example.com", now.minus(200, ChronoUnit.HOURS),
+                now.minus(30, ChronoUnit.DAYS)));
+        Link pastDue = linkRepository.save(new Link(
+                "https://past-due.example.com", now.minus(200, ChronoUnit.HOURS),
+                now.minus(30, ChronoUnit.DAYS).minus(1, ChronoUnit.MINUTES)));
+
+        linkRepository.deleteByExpiresAtLessThanEqual(graveyardThreshold);
+        List<Link> graveyard = linkRepository.findByExpiresAtLessThanEqualAndExpiresAtAfterOrderByExpiresAtAsc(
+                now, graveyardThreshold);
+
+        assertThat(graveyard).extracting(Link::getId).containsExactly(almostDue.getId());
+        assertThat(linkRepository.findById(exactlyDue.getId())).isEmpty();
+        assertThat(linkRepository.findById(pastDue.getId())).isEmpty();
+    }
+
+    @Test
+    void permanentDeletionActuallyRemovesTheRowRatherThanJustFilteringIt() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link overdue = linkRepository.save(new Link(
+                "https://overdue.example.com", now.minus(200, ChronoUnit.HOURS), now.minus(31, ChronoUnit.DAYS)));
+        long countBefore = linkRepository.count();
+
+        linkRepository.deleteByExpiresAtLessThanEqual(now.minus(30, ChronoUnit.DAYS));
+
+        assertThat(linkRepository.count()).isEqualTo(countBefore - 1);
+        assertThat(linkRepository.existsById(overdue.getId())).isFalse();
+    }
+
+    @Test
+    void deleteThenReadHandlesZeroOneAndManyOverdueRowsCorrectly() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Instant graveyardThreshold = now.minus(30, ChronoUnit.DAYS);
+
+        // Zero overdue rows: delete is a no-op.
+        linkRepository.deleteByExpiresAtLessThanEqual(graveyardThreshold);
+        assertThat(linkRepository.count()).isZero();
+
+        // One overdue row.
+        Link singleOverdue = linkRepository.save(new Link(
+                "https://single-overdue.example.com", now.minus(200, ChronoUnit.HOURS), now.minus(31, ChronoUnit.DAYS)));
+        linkRepository.deleteByExpiresAtLessThanEqual(graveyardThreshold);
+        assertThat(linkRepository.existsById(singleOverdue.getId())).isFalse();
+
+        // Many overdue rows at once, alongside one that must survive.
+        Link overdueA = linkRepository.save(new Link(
+                "https://overdue-a.example.com", now.minus(200, ChronoUnit.HOURS), now.minus(32, ChronoUnit.DAYS)));
+        Link overdueB = linkRepository.save(new Link(
+                "https://overdue-b.example.com", now.minus(200, ChronoUnit.HOURS), now.minus(33, ChronoUnit.DAYS)));
+        Link stillInGraveyard = linkRepository.save(new Link(
+                "https://still-in-graveyard.example.com", now.minus(200, ChronoUnit.HOURS), now.minus(5, ChronoUnit.DAYS)));
+
+        linkRepository.deleteByExpiresAtLessThanEqual(graveyardThreshold);
+
+        assertThat(linkRepository.existsById(overdueA.getId())).isFalse();
+        assertThat(linkRepository.existsById(overdueB.getId())).isFalse();
+        assertThat(linkRepository.existsById(stillInGraveyard.getId())).isTrue();
+    }
+
+    @Test
     void anExpiredLinksRecordRemainsUnmodifiedInStorageAfterBeingExcluded() {
         Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
         Instant originalSavedAt = now.minus(170, ChronoUnit.HOURS);

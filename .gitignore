@@ -1,0 +1,21 @@
+# Java / Maven
+target/
+*.class
+*.jar
+
+# H2 database files
+*.db
+*.mv.db
+*.trace.db
+
+# Node.js / frontend (frontend/ has its own .gitignore; this covers root-level tooling)
+node_modules/
+dist/
+*.log
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

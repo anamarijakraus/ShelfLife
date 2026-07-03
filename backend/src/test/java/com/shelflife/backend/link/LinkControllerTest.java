@@ -8,9 +8,15 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -21,6 +27,9 @@ class LinkControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private LinkRepository linkRepository;
 
     @Test
     void postValidUrlReturns201WithPersistedLink() throws Exception {
@@ -117,6 +126,47 @@ class LinkControllerTest {
                 .andExpect(jsonPath("$.links.length()").value(2))
                 .andExpect(jsonPath("$.links[0].url").value("https://first-saved.example.com"))
                 .andExpect(jsonPath("$.links[1].url").value("https://second-saved.example.com"));
+    }
+
+    @Test
+    void getGraveyardReturnsEmptyArrayWhenNothingSaved() throws Exception {
+        mockMvc.perform(get("/api/links/graveyard"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.links").isArray())
+                .andExpect(jsonPath("$.links").isEmpty());
+    }
+
+    @Test
+    void getGraveyardReturnsLinksOrderedSoonestToBeDeletedFirstWithDeletionDeadline() throws Exception {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link soonToBeDeleted = linkRepository.save(new Link(
+                "https://soon-deleted.example.com",
+                now.minus(200, ChronoUnit.HOURS),
+                now.minus(29, ChronoUnit.DAYS)));
+        linkRepository.save(new Link(
+                "https://later-deleted.example.com",
+                now.minus(200, ChronoUnit.HOURS),
+                now.minus(1, ChronoUnit.DAYS)));
+
+        String response = mockMvc.perform(get("/api/links/graveyard"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.links.length()").value(2))
+                .andExpect(jsonPath("$.links[0].url").value("https://soon-deleted.example.com"))
+                .andExpect(jsonPath("$.links[1].url").value("https://later-deleted.example.com"))
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(response).contains(soonToBeDeleted.getExpiresAt().plus(30, ChronoUnit.DAYS).toString());
+        assertThat(response).doesNotContain("\"expiresAt\":\"" + soonToBeDeleted.getExpiresAt() + "\"");
+    }
+
+    @Test
+    void controllerExposesOnlyGetAndPostNoRescueResurrectEarlyDeleteOrPinEndpoint() throws Exception {
+        mockMvc.perform(patch("/api/links/1")).andExpect(status().is4xxClientError());
+        mockMvc.perform(put("/api/links/1")).andExpect(status().is4xxClientError());
+        mockMvc.perform(delete("/api/links/1")).andExpect(status().is4xxClientError());
+        mockMvc.perform(patch("/api/links/graveyard/1")).andExpect(status().is4xxClientError());
+        mockMvc.perform(put("/api/links/graveyard/1")).andExpect(status().is4xxClientError());
+        mockMvc.perform(delete("/api/links/graveyard/1")).andExpect(status().is4xxClientError());
     }
 
     private static long idFrom(String json) {

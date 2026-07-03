@@ -1,10 +1,11 @@
-import { UrlCaptureForm } from './components/UrlCaptureForm'
-import { LinkList } from './components/LinkList'
-import { ActiveCount } from './components/ActiveCount'
-import { useActiveLinks } from './hooks/useActiveLinks'
+import { useState } from 'react'
+import { NavTabs } from './components/NavTabs'
+import type { View } from './components/NavTabs'
+import { ActiveView } from './components/ActiveView'
+import { GraveyardView } from './components/GraveyardView'
 
 function App() {
-  const { links, refresh } = useActiveLinks()
+  const [view, setView] = useState<View>('active')
 
   return (
     <div className="min-h-screen flex flex-col items-center px-4 py-16 gap-8">
@@ -12,12 +13,9 @@ function App() {
         ShelfLife
       </h1>
 
-      <UrlCaptureForm onCaptured={refresh} />
+      <NavTabs active={view} onSelect={setView} />
 
-      <div className="w-full max-w-2xl flex flex-col gap-4">
-        <ActiveCount links={links} />
-        <LinkList links={links} />
-      </div>
+      {view === 'active' ? <ActiveView /> : <GraveyardView />}
     </div>
   )
 }

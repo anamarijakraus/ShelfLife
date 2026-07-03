@@ -13,6 +13,7 @@ import java.util.regex.Pattern;
 public class LinkService {
 
     static final long EXPIRY_HOURS = 168;
+    static final long GRAVEYARD_DAYS = 30;
 
     private static final Pattern SCHEME_PATTERN = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.-]*://");
 
@@ -37,6 +38,15 @@ public class LinkService {
 
     public List<Link> listActiveLinks() {
         return linkRepository.findByExpiresAtAfterOrderByExpiresAtAsc(Instant.now());
+    }
+
+    public List<Link> listGraveyardLinks() {
+        Instant now = Instant.now();
+        Instant graveyardThreshold = now.minus(GRAVEYARD_DAYS, ChronoUnit.DAYS);
+
+        linkRepository.deleteByExpiresAtLessThanEqual(graveyardThreshold);
+
+        return linkRepository.findByExpiresAtLessThanEqualAndExpiresAtAfterOrderByExpiresAtAsc(now, graveyardThreshold);
     }
 
     private String normalize(String rawUrl) {

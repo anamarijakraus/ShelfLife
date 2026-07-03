@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: com.shelflife.backend.link.LinkControllerTest
--------------------------------------------------------------------------------
-Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 15.03 s -- in com.shelflife.backend.link.LinkControllerTest

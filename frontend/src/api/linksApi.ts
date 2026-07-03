@@ -45,3 +45,14 @@ export async function fetchActiveLinks(): Promise<Link[]> {
   const body = (await response.json()) as { links: Link[] }
   return body.links
 }
+
+export async function fetchGraveyardLinks(): Promise<Link[]> {
+  const response = await fetch(`${BASE_URL}/graveyard`)
+
+  if (!response.ok) {
+    throw new ApiError('Failed to load graveyard links.')
+  }
+
+  const body = (await response.json()) as { links: Link[] }
+  return body.links
+}

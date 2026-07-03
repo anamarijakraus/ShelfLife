@@ -28,14 +28,22 @@ public class LinkController {
     }
 
     @GetMapping
-    public ActiveLinksResponse listActiveLinks() {
+    public LinksResponse listActiveLinks() {
         List<LinkResponse> links = linkService.listActiveLinks().stream()
                 .map(LinkResponse::from)
                 .toList();
-        return new ActiveLinksResponse(links);
+        return new LinksResponse(links);
     }
 
-    public record ActiveLinksResponse(List<LinkResponse> links) {
+    @GetMapping("/graveyard")
+    public LinksResponse listGraveyardLinks() {
+        List<LinkResponse> links = linkService.listGraveyardLinks().stream()
+                .map(LinkResponse::forGraveyard)
+                .toList();
+        return new LinksResponse(links);
+    }
+
+    public record LinksResponse(List<LinkResponse> links) {
     }
 
     @ExceptionHandler(InvalidUrlException.class)

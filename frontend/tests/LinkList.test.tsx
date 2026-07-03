@@ -19,6 +19,12 @@ describe('LinkList', () => {
     expect(screen.getByText(/nothing saved yet/i)).toBeInTheDocument()
   })
 
+  it('shows a custom empty message when provided, instead of the default', () => {
+    render(<LinkList links={[]} emptyMessage="Nothing in the graveyard yet." />)
+    expect(screen.getByText('Nothing in the graveyard yet.')).toBeInTheDocument()
+    expect(screen.queryByText(/nothing saved yet/i)).not.toBeInTheDocument()
+  })
+
   it('renders items in the order they are received', () => {
     const links = [
       link({ id: 1, url: 'https://soonest.example.com' }),

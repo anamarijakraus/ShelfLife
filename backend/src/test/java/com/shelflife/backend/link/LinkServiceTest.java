@@ -126,4 +126,94 @@ class LinkServiceTest {
 
         assertThat(active).extracting(Link::getId).doesNotContain(link.getId());
     }
+
+    @Test
+    void linkAtExactly168HoursIsAbsentFromActiveAndPresentInGraveyard() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link link = linkRepository.save(new Link(
+                "https://example.com/just-entered-graveyard",
+                now.minus(168, ChronoUnit.HOURS),
+                now
+        ));
+
+        List<Link> active = linkService.listActiveLinks();
+        List<Link> graveyard = linkService.listGraveyardLinks();
+
+        assertThat(active).extracting(Link::getId).doesNotContain(link.getId());
+        assertThat(graveyard).extracting(Link::getId).contains(link.getId());
+    }
+
+    @Test
+    void graveyardMembershipIsComputedFromExpiresAtIndependentOfSavedAt() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        // savedAt is deliberately unrelated to the normal savedAt+168h=expiresAt relationship,
+        // proving graveyard membership (and its 30-day deadline) depends only on expiresAt.
+        Link link = linkRepository.save(new Link(
+                "https://example.com/graveyard-membership",
+                now.minus(1000, ChronoUnit.HOURS),
+                now.minus(1, ChronoUnit.DAYS)
+        ));
+
+        List<Link> graveyard = linkService.listGraveyardLinks();
+
+        assertThat(graveyard).extracting(Link::getId).contains(link.getId());
+    }
+
+    @Test
+    void linkThatExpiredWhileAppWasClosedIsAlreadyInGraveyardOnNextRead() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link link = linkRepository.save(new Link(
+                "https://example.com/expired-while-closed",
+                now.minus(200, ChronoUnit.HOURS),
+                now.minus(10, ChronoUnit.HOURS)
+        ));
+
+        List<Link> graveyard = linkService.listGraveyardLinks();
+
+        assertThat(graveyard).extracting(Link::getId).contains(link.getId());
+    }
+
+    @Test
+    void linkAt29Days23Hours59MinutesInGraveyardIsStillIncluded() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link link = linkRepository.save(new Link(
+                "https://example.com/almost-permanently-deleted",
+                now.minus(200, ChronoUnit.HOURS),
+                now.minus(29, ChronoUnit.DAYS).minus(23, ChronoUnit.HOURS).minus(59, ChronoUnit.MINUTES)
+        ));
+
+        List<Link> graveyard = linkService.listGraveyardLinks();
+
+        assertThat(graveyard).extracting(Link::getId).contains(link.getId());
+    }
+
+    @Test
+    void linkAtExactly30DaysInGraveyardIsExcludedAndDeleted() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link link = linkRepository.save(new Link(
+                "https://example.com/exactly-permanently-deleted",
+                now.minus(200, ChronoUnit.HOURS),
+                now.minus(30, ChronoUnit.DAYS)
+        ));
+
+        List<Link> graveyard = linkService.listGraveyardLinks();
+
+        assertThat(graveyard).extracting(Link::getId).doesNotContain(link.getId());
+        assertThat(linkRepository.findById(link.getId())).isEmpty();
+    }
+
+    @Test
+    void linkAt30Days1MinuteInGraveyardIsExcludedAndDeleted() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link link = linkRepository.save(new Link(
+                "https://example.com/past-permanently-deleted",
+                now.minus(200, ChronoUnit.HOURS),
+                now.minus(30, ChronoUnit.DAYS).minus(1, ChronoUnit.MINUTES)
+        ));
+
+        List<Link> graveyard = linkService.listGraveyardLinks();
+
+        assertThat(graveyard).extracting(Link::getId).doesNotContain(link.getId());
+        assertThat(linkRepository.findById(link.getId())).isEmpty();
+    }
 }
