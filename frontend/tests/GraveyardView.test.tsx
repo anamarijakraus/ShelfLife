@@ -21,12 +21,16 @@ describe('GraveyardView', () => {
       {
         id: 1,
         url: 'https://soonest.example.com',
+        title: 'https://soonest.example.com',
+        faviconUrl: null,
         savedAt: 'a',
         expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
       },
       {
         id: 2,
         url: 'https://latest.example.com',
+        title: 'https://latest.example.com',
+        faviconUrl: null,
         savedAt: 'a',
         expiresAt: new Date(Date.now() + 10 * 86_400_000).toISOString(),
       },

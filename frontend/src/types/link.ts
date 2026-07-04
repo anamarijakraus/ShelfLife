@@ -3,4 +3,6 @@ export interface Link {
   url: string
   savedAt: string
   expiresAt: string
+  title: string
+  faviconUrl: string | null
 }

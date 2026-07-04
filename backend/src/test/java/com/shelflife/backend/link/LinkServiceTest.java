@@ -8,9 +8,16 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest
 @Transactional
@@ -215,5 +222,138 @@ class LinkServiceTest {
 
         assertThat(graveyard).extracting(Link::getId).doesNotContain(link.getId());
         assertThat(linkRepository.findById(link.getId())).isEmpty();
+    }
+
+    @Test
+    void faviconUrlIsPopulatedSynchronouslyAtSaveTime() {
+        Link link = linkService.createLink("https://example.com");
+
+        assertThat(link.getFaviconUrl()).isNotNull();
+        assertThat(link.getFaviconUrl()).contains("domain=example.com");
+    }
+
+    @Test
+    void createLinkNeverInvokesTheNetworkCallingTitleFetchMethod() {
+        LinkMetadataFetcher spyFetcher = mock(LinkMetadataFetcher.class);
+        when(spyFetcher.buildFaviconUrl(anyString())).thenReturn("https://favicon.example/x");
+        LinkService serviceWithSpy = new LinkService(linkRepository, spyFetcher);
+
+        serviceWithSpy.createLink("https://example.com/spy-check");
+
+        verify(spyFetcher, never()).fetchTitle(anyString());
+        verify(spyFetcher).buildFaviconUrl("https://example.com/spy-check");
+    }
+
+    @Test
+    void retrievedTitleIsUsedAsTheResponseTitleAfterBackfill() {
+        LinkMetadataFetcher mockFetcher = mock(LinkMetadataFetcher.class);
+        when(mockFetcher.fetchTitle(anyString())).thenReturn(Optional.of("A Real Title"));
+        when(mockFetcher.buildFaviconUrl(anyString())).thenReturn("https://favicon.example/x");
+        LinkService serviceWithMock = new LinkService(linkRepository, mockFetcher);
+
+        Link created = serviceWithMock.createLink("https://example.com/needs-title");
+        List<Link> active = serviceWithMock.listActiveLinks();
+
+        Link backfilled = active.stream().filter(l -> l.getId().equals(created.getId())).findFirst().orElseThrow();
+        assertThat(backfilled.getPageTitle()).isEqualTo("A Real Title");
+        assertThat(backfilled.getTitleFetchedAt()).isNotNull();
+        assertThat(LinkResponse.from(backfilled).title()).isEqualTo("A Real Title");
+    }
+
+    @Test
+    void missingTitleFallsBackToUrlInTheResponse() {
+        LinkMetadataFetcher mockFetcher = mock(LinkMetadataFetcher.class);
+        when(mockFetcher.fetchTitle(anyString())).thenReturn(Optional.empty());
+        when(mockFetcher.buildFaviconUrl(anyString())).thenReturn(null);
+        LinkService serviceWithMock = new LinkService(linkRepository, mockFetcher);
+
+        Link created = serviceWithMock.createLink("https://example.com/no-title");
+        serviceWithMock.listActiveLinks();
+
+        Link reloaded = linkRepository.findById(created.getId()).orElseThrow();
+        assertThat(reloaded.getPageTitle()).isNull();
+        assertThat(LinkResponse.from(reloaded).title()).isEqualTo("https://example.com/no-title");
+    }
+
+    @Test
+    void aPreExistingLinkWithNoMetadataAttemptIsBackfilledOnItsNextListRead() {
+        LinkMetadataFetcher mockFetcher = mock(LinkMetadataFetcher.class);
+        when(mockFetcher.fetchTitle(anyString())).thenReturn(Optional.of("Backfilled Title"));
+        when(mockFetcher.buildFaviconUrl(anyString())).thenReturn("https://favicon.example/x");
+        LinkService serviceWithMock = new LinkService(linkRepository, mockFetcher);
+
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link preExisting = linkRepository.save(new Link("https://pre-existing.example.com", now, now.plusSeconds(3600)));
+        assertThat(preExisting.getTitleFetchedAt()).isNull();
+        assertThat(preExisting.getFaviconUrl()).isNull();
+
+        List<Link> active = serviceWithMock.listActiveLinks();
+
+        Link backfilled = active.stream().filter(l -> l.getId().equals(preExisting.getId())).findFirst().orElseThrow();
+        assertThat(backfilled.getTitleFetchedAt()).isNotNull();
+        assertThat(backfilled.getFaviconUrl()).isNotNull();
+        assertThat(backfilled.getPageTitle()).isEqualTo("Backfilled Title");
+    }
+
+    @Test
+    void aLinkIsNeverReFetchedOnceTitleFetchedAtIsSet() {
+        LinkMetadataFetcher mockFetcher = mock(LinkMetadataFetcher.class);
+        when(mockFetcher.fetchTitle(anyString())).thenReturn(Optional.empty());
+        when(mockFetcher.buildFaviconUrl(anyString())).thenReturn("https://favicon.example/x");
+        LinkService serviceWithMock = new LinkService(linkRepository, mockFetcher);
+
+        serviceWithMock.createLink("https://example.com/fetch-once");
+        serviceWithMock.listActiveLinks();
+        serviceWithMock.listActiveLinks();
+
+        verify(mockFetcher, times(1)).fetchTitle("https://example.com/fetch-once");
+    }
+
+    @Test
+    void deletingAnActiveLinkRemovesIt() {
+        Link link = linkService.createLink("https://example.com/to-delete-active");
+
+        linkService.deleteLink(link.getId());
+
+        assertThat(linkRepository.existsById(link.getId())).isFalse();
+    }
+
+    @Test
+    void deletingAGraveyardLinkRemovesIt() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link link = linkRepository.save(new Link(
+                "https://example.com/to-delete-graveyard", now.minus(200, ChronoUnit.HOURS), now.minus(1, ChronoUnit.DAYS)));
+
+        linkService.deleteLink(link.getId());
+
+        assertThat(linkRepository.existsById(link.getId())).isFalse();
+    }
+
+    @Test
+    void deletingANonExistentIdIsANoOpRatherThanAnError() {
+        long nonExistentId = 999_999L;
+        assertThat(linkRepository.existsById(nonExistentId)).isFalse();
+
+        linkService.deleteLink(nonExistentId);
+
+        assertThat(linkRepository.existsById(nonExistentId)).isFalse();
+    }
+
+    @Test
+    void deletingOneLinkLeavesEveryOtherLinksExpiryOrderAndCountUnaffected() {
+        Link survivorA = linkService.createLink("https://example.com/survivor-a");
+        Link toDelete = linkService.createLink("https://example.com/doomed");
+        Link survivorB = linkService.createLink("https://example.com/survivor-b");
+        long countBefore = linkRepository.count();
+
+        linkService.deleteLink(toDelete.getId());
+
+        assertThat(linkRepository.count()).isEqualTo(countBefore - 1);
+        Link reloadedA = linkRepository.findById(survivorA.getId()).orElseThrow();
+        Link reloadedB = linkRepository.findById(survivorB.getId()).orElseThrow();
+        assertThat(reloadedA.getExpiresAt()).isEqualTo(survivorA.getExpiresAt());
+        assertThat(reloadedB.getExpiresAt()).isEqualTo(survivorB.getExpiresAt());
+        assertThat(linkService.listActiveLinks()).extracting(Link::getId)
+                .containsExactly(survivorA.getId(), survivorB.getId());
     }
 }

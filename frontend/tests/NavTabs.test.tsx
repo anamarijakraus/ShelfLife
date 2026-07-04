@@ -7,7 +7,7 @@ describe('NavTabs', () => {
   it('renders both tabs', () => {
     render(<NavTabs active="active" onSelect={() => {}} />)
 
-    expect(screen.getByRole('tab', { name: 'Active' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'On the shelf' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Graveyard' })).toBeInTheDocument()
   })
 
@@ -15,7 +15,7 @@ describe('NavTabs', () => {
     render(<NavTabs active="graveyard" onSelect={() => {}} />)
 
     expect(screen.getByRole('tab', { name: 'Graveyard' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('tab', { name: 'Active' })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByRole('tab', { name: 'On the shelf' })).toHaveAttribute('aria-selected', 'false')
   })
 
   it('calls onSelect with the clicked tab', async () => {

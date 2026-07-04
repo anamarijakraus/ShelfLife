@@ -13,6 +13,8 @@ describe('UrlCaptureForm', () => {
     const createdLink = {
       id: 1,
       url: 'https://example.com',
+      title: 'https://example.com',
+      faviconUrl: null,
       savedAt: '2026-07-02T00:00:00Z',
       expiresAt: '2026-07-09T00:00:00Z',
     }

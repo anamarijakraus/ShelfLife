@@ -15,7 +15,7 @@ describe('useActiveLinks', () => {
 
   it('fetches active links on mount', async () => {
     const links = [
-      { id: 1, url: 'https://example.com', savedAt: 'a', expiresAt: 'b' },
+      { id: 1, url: 'https://example.com', title: 'https://example.com', faviconUrl: null, savedAt: 'a', expiresAt: 'b' },
     ]
     vi.spyOn(linksApi, 'fetchActiveLinks').mockResolvedValue(links)
 

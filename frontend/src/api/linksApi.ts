@@ -56,3 +56,11 @@ export async function fetchGraveyardLinks(): Promise<Link[]> {
   const body = (await response.json()) as { links: Link[] }
   return body.links
 }
+
+export async function deleteLink(id: number): Promise<void> {
+  const response = await fetch(`${BASE_URL}/${id}`, { method: 'DELETE' })
+
+  if (!response.ok) {
+    throw new ApiError('Failed to delete the link.')
+  }
+}

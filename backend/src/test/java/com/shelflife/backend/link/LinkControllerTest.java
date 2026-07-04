@@ -40,7 +40,9 @@ class LinkControllerTest {
                 .andExpect(jsonPath("$.id").exists())
                 .andExpect(jsonPath("$.url").value("https://example.com"))
                 .andExpect(jsonPath("$.savedAt").exists())
-                .andExpect(jsonPath("$.expiresAt").exists());
+                .andExpect(jsonPath("$.expiresAt").exists())
+                .andExpect(jsonPath("$.title").value("https://example.com"))
+                .andExpect(jsonPath("$.faviconUrl").value("https://www.google.com/s2/favicons?domain=example.com&sz=64"));
     }
 
     @Test
@@ -125,7 +127,13 @@ class LinkControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.links.length()").value(2))
                 .andExpect(jsonPath("$.links[0].url").value("https://first-saved.example.com"))
-                .andExpect(jsonPath("$.links[1].url").value("https://second-saved.example.com"));
+                .andExpect(jsonPath("$.links[1].url").value("https://second-saved.example.com"))
+                // Neither subdomain resolves, so title falls back to the raw url (FR-006) and faviconUrl
+                // is still the synchronously-computed, always-present favicon-service URL (FR-007).
+                .andExpect(jsonPath("$.links[0].title").value("https://first-saved.example.com"))
+                .andExpect(jsonPath("$.links[1].title").value("https://second-saved.example.com"))
+                .andExpect(jsonPath("$.links[0].faviconUrl").exists())
+                .andExpect(jsonPath("$.links[1].faviconUrl").exists());
     }
 
     @Test
@@ -153,6 +161,10 @@ class LinkControllerTest {
                 .andExpect(jsonPath("$.links.length()").value(2))
                 .andExpect(jsonPath("$.links[0].url").value("https://soon-deleted.example.com"))
                 .andExpect(jsonPath("$.links[1].url").value("https://later-deleted.example.com"))
+                .andExpect(jsonPath("$.links[0].title").value("https://soon-deleted.example.com"))
+                .andExpect(jsonPath("$.links[1].title").value("https://later-deleted.example.com"))
+                .andExpect(jsonPath("$.links[0].faviconUrl").exists())
+                .andExpect(jsonPath("$.links[1].faviconUrl").exists())
                 .andReturn().getResponse().getContentAsString();
 
         assertThat(response).contains(soonToBeDeleted.getExpiresAt().plus(30, ChronoUnit.DAYS).toString());
@@ -160,13 +172,41 @@ class LinkControllerTest {
     }
 
     @Test
-    void controllerExposesOnlyGetAndPostNoRescueResurrectEarlyDeleteOrPinEndpoint() throws Exception {
+    void controllerExposesOnlyGetPostAndDeleteNoRescueResurrectOrPinEndpoint() throws Exception {
         mockMvc.perform(patch("/api/links/1")).andExpect(status().is4xxClientError());
         mockMvc.perform(put("/api/links/1")).andExpect(status().is4xxClientError());
-        mockMvc.perform(delete("/api/links/1")).andExpect(status().is4xxClientError());
         mockMvc.perform(patch("/api/links/graveyard/1")).andExpect(status().is4xxClientError());
         mockMvc.perform(put("/api/links/graveyard/1")).andExpect(status().is4xxClientError());
         mockMvc.perform(delete("/api/links/graveyard/1")).andExpect(status().is4xxClientError());
+    }
+
+    @Test
+    void deleteActiveLinkReturns204AndRemovesIt() throws Exception {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link link = linkRepository.save(new Link("https://example.com/delete-active", now, now.plusSeconds(3600)));
+
+        mockMvc.perform(delete("/api/links/" + link.getId()))
+                .andExpect(status().isNoContent());
+
+        assertThat(linkRepository.existsById(link.getId())).isFalse();
+    }
+
+    @Test
+    void deleteGraveyardLinkReturns204AndRemovesIt() throws Exception {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link link = linkRepository.save(new Link(
+                "https://example.com/delete-graveyard", now.minus(200, ChronoUnit.HOURS), now.minus(1, ChronoUnit.DAYS)));
+
+        mockMvc.perform(delete("/api/links/" + link.getId()))
+                .andExpect(status().isNoContent());
+
+        assertThat(linkRepository.existsById(link.getId())).isFalse();
+    }
+
+    @Test
+    void deleteNonExistentIdReturns204AsANoOpNotAnError() throws Exception {
+        mockMvc.perform(delete("/api/links/999999"))
+                .andExpect(status().isNoContent());
     }
 
     private static long idFrom(String json) {

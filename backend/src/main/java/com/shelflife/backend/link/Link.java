@@ -29,6 +29,15 @@ public class Link {
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
 
+    @Column(name = "page_title", length = 512)
+    private String pageTitle;
+
+    @Column(name = "title_fetched_at")
+    private Instant titleFetchedAt;
+
+    @Column(name = "favicon_url")
+    private String faviconUrl;
+
     protected Link() {
         // required by JPA
     }
@@ -53,5 +62,29 @@ public class Link {
 
     public Instant getExpiresAt() {
         return expiresAt;
+    }
+
+    public String getPageTitle() {
+        return pageTitle;
+    }
+
+    public void setPageTitle(String pageTitle) {
+        this.pageTitle = pageTitle;
+    }
+
+    public Instant getTitleFetchedAt() {
+        return titleFetchedAt;
+    }
+
+    public void setTitleFetchedAt(Instant titleFetchedAt) {
+        this.titleFetchedAt = titleFetchedAt;
+    }
+
+    public String getFaviconUrl() {
+        return faviconUrl;
+    }
+
+    public void setFaviconUrl(String faviconUrl) {
+        this.faviconUrl = faviconUrl;
     }
 }

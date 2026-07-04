@@ -1,2 +1,62 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
 @import "tailwindcss";
 @plugin "daisyui";
+
+@plugin "daisyui/theme" {
+  name: "shelflife";
+  default: true;
+  prefersdark: false;
+  color-scheme: light;
+
+  /* Warm sand — page canvas (FR-002) */
+  --color-base-100: #DDCBB7;
+  --color-base-200: #D3BEA3;
+  --color-base-300: #C2A97F;
+  /* Rich brown — primary reading text */
+  --color-base-content: #7B4B36;
+
+  /* Deep forest green — calm/"fresh" accents, card borders, active-tab fill */
+  --color-primary: #264025;
+  --color-primary-content: #DDCBB7;
+
+  /* Muted olive — secondary text, borders, quiet UI chrome */
+  --color-secondary: #82896E;
+  --color-secondary-content: #DDCBB7;
+  --color-neutral: #82896E;
+  --color-neutral-content: #DDCBB7;
+
+  /* Terracotta — warm interactive highlights and urgency */
+  --color-accent: #AD6B4B;
+  --color-accent-content: #DDCBB7;
+  --color-warning: #AD6B4B;
+  --color-warning-content: #DDCBB7;
+  --color-error: #AD6B4B;
+  --color-error-content: #DDCBB7;
+  --color-info: #82896E;
+  --color-info-content: #DDCBB7;
+  --color-success: #264025;
+  --color-success-content: #DDCBB7;
+
+  /* Soft, rounded, low-clutter shell (FR-001) */
+  --radius-selector: 1rem;
+  --radius-field: 0.75rem;
+  --radius-box: 1.25rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+
+  /* App-specific tokens (not DaisyUI semantic roles), colors sampled directly from the design
+     mockup (design/mockup-active tab.png, design/mockup-graveyard.png) so cards read as
+     distinct "objects" against the sand page canvas. */
+  --color-shelf-card: #D8B69F;
+  --color-graveyard-card: #D3CBB8;
+  --color-badge-circle: #F3EADB;
+  --color-capture-bg: #E9DCC8;
+  --color-capture-border: #9D7763;
+}
+
+html {
+  font-family: 'Space Mono', monospace;
+}
