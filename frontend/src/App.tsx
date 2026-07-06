@@ -3,6 +3,7 @@ import { NavTabs } from './components/NavTabs'
 import type { View } from './components/NavTabs'
 import { ActiveView } from './components/ActiveView'
 import { GraveyardView } from './components/GraveyardView'
+import { FavoritesView } from './components/FavoritesView'
 
 function App() {
   const [view, setView] = useState<View>('active')
@@ -32,7 +33,7 @@ function App() {
 
       <NavTabs active={view} onSelect={setView} />
 
-      {view === 'active' ? <ActiveView /> : <GraveyardView />}
+      {view === 'active' ? <ActiveView /> : view === 'graveyard' ? <GraveyardView /> : <FavoritesView />}
     </div>
   )
 }

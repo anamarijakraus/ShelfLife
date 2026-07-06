@@ -38,6 +38,16 @@ public class Link {
     @Column(name = "favicon_url")
     private String faviconUrl;
 
+    // columnDefinition includes an explicit DEFAULT so that Hibernate's ddl-auto=update generates
+    // "ADD COLUMN pinned BOOLEAN NOT NULL DEFAULT FALSE" against an already-populated table (an
+    // upgrade from Features 1-3's schema) — without a DEFAULT, H2 (and most databases) reject a
+    // NOT NULL column add on a non-empty table since existing rows have no value to satisfy it.
+    @Column(name = "pinned", nullable = false, columnDefinition = "boolean not null default false")
+    private boolean pinned = false;
+
+    @Column(name = "pinned_at")
+    private Instant pinnedAt;
+
     protected Link() {
         // required by JPA
     }
@@ -64,6 +74,10 @@ public class Link {
         return expiresAt;
     }
 
+    public void setExpiresAt(Instant expiresAt) {
+        this.expiresAt = expiresAt;
+    }
+
     public String getPageTitle() {
         return pageTitle;
     }
@@ -86,5 +100,21 @@ public class Link {
 
     public void setFaviconUrl(String faviconUrl) {
         this.faviconUrl = faviconUrl;
+    }
+
+    public boolean isPinned() {
+        return pinned;
+    }
+
+    public void setPinned(boolean pinned) {
+        this.pinned = pinned;
+    }
+
+    public Instant getPinnedAt() {
+        return pinnedAt;
+    }
+
+    public void setPinnedAt(Instant pinnedAt) {
+        this.pinnedAt = pinnedAt;
     }
 }

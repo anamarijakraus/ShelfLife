@@ -17,6 +17,15 @@ public record LinkResponse(Long id, String url, Instant savedAt, Instant expires
                 link.getExpiresAt().plus(30, ChronoUnit.DAYS), resolveTitle(link), link.getFaviconUrl());
     }
 
+    // expiresAt is always null here: a pinned link's countdown concept does not apply while pinned
+    // (FR-006), and its underlying stored value is stale/inert (research.md §2/§5) — sending it as
+    // null rather than that stale value avoids ever tempting the frontend to compute a countdown
+    // from it by mistake.
+    public static LinkResponse forFavorites(Link link) {
+        return new LinkResponse(link.getId(), link.getUrl(), link.getSavedAt(), null,
+                resolveTitle(link), link.getFaviconUrl());
+    }
+
     // Never null: the retrieved page title when available, otherwise the raw url (FR-005/FR-006).
     // Shared by both factories above so the fallback rule has exactly one implementation.
     private static String resolveTitle(Link link) {

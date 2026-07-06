@@ -45,12 +45,32 @@ public class LinkController {
         return new LinksResponse(links);
     }
 
+    @GetMapping("/favorites")
+    public LinksResponse listFavoriteLinks() {
+        List<LinkResponse> links = linkService.listFavoriteLinks().stream()
+                .map(LinkResponse::forFavorites)
+                .toList();
+        return new LinksResponse(links);
+    }
+
     public record LinksResponse(List<LinkResponse> links) {
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteLink(@PathVariable Long id) {
         linkService.deleteLink(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/pin")
+    public ResponseEntity<Void> pinLink(@PathVariable Long id) {
+        linkService.pinLink(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/unpin")
+    public ResponseEntity<Void> unpinLink(@PathVariable Long id) {
+        linkService.unpinLink(id);
         return ResponseEntity.noContent().build();
     }
 

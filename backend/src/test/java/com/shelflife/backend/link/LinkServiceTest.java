@@ -101,7 +101,7 @@ class LinkServiceTest {
                 now.plusSeconds(60)
         ));
 
-        List<Link> active = linkRepository.findByExpiresAtAfterOrderByExpiresAtAsc(now);
+        List<Link> active = linkRepository.findByPinnedFalseAndExpiresAtAfterOrderByExpiresAtAsc(now);
 
         assertThat(active).extracting(Link::getId).contains(link.getId());
     }
@@ -115,7 +115,7 @@ class LinkServiceTest {
                 now
         ));
 
-        List<Link> active = linkRepository.findByExpiresAtAfterOrderByExpiresAtAsc(now);
+        List<Link> active = linkRepository.findByPinnedFalseAndExpiresAtAfterOrderByExpiresAtAsc(now);
 
         assertThat(active).extracting(Link::getId).doesNotContain(link.getId());
     }
@@ -129,7 +129,7 @@ class LinkServiceTest {
                 now.minusSeconds(60)
         ));
 
-        List<Link> active = linkRepository.findByExpiresAtAfterOrderByExpiresAtAsc(now);
+        List<Link> active = linkRepository.findByPinnedFalseAndExpiresAtAfterOrderByExpiresAtAsc(now);
 
         assertThat(active).extracting(Link::getId).doesNotContain(link.getId());
     }
@@ -355,5 +355,147 @@ class LinkServiceTest {
         assertThat(reloadedB.getExpiresAt()).isEqualTo(survivorB.getExpiresAt());
         assertThat(linkService.listActiveLinks()).extracting(Link::getId)
                 .containsExactly(survivorA.getId(), survivorB.getId());
+    }
+
+    @Test
+    void pinningAnActiveLinkRemovesItFromTheActiveList() {
+        Link link = linkService.createLink("https://example.com/pin-from-active");
+
+        linkService.pinLink(link.getId());
+
+        assertThat(linkService.listActiveLinks()).extracting(Link::getId).doesNotContain(link.getId());
+        assertThat(linkRepository.findById(link.getId()).orElseThrow().isPinned()).isTrue();
+    }
+
+    @Test
+    void pinningAGraveyardLinkRemovesItFromTheGraveyard() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link link = linkRepository.save(new Link(
+                "https://example.com/pin-from-graveyard", now.minus(200, ChronoUnit.HOURS), now.minus(1, ChronoUnit.DAYS)));
+
+        linkService.pinLink(link.getId());
+
+        assertThat(linkService.listGraveyardLinks()).extracting(Link::getId).doesNotContain(link.getId());
+        assertThat(linkRepository.findById(link.getId()).orElseThrow().isPinned()).isTrue();
+    }
+
+    @Test
+    void pinningAnAlreadyPinnedLinkIsATrueNoOpPinnedAtUnchanged() {
+        Link link = linkService.createLink("https://example.com/already-pinned");
+        linkService.pinLink(link.getId());
+        Instant firstPinnedAt = linkRepository.findById(link.getId()).orElseThrow().getPinnedAt();
+
+        linkService.pinLink(link.getId());
+
+        assertThat(linkRepository.findById(link.getId()).orElseThrow().getPinnedAt()).isEqualTo(firstPinnedAt);
+    }
+
+    @Test
+    void pinningANonExistentIdIsANoOp() {
+        long nonExistentId = 999_999L;
+
+        linkService.pinLink(nonExistentId);
+
+        assertThat(linkRepository.existsById(nonExistentId)).isFalse();
+    }
+
+    @Test
+    void aPinnedLinkSurvivesPastBoth168HourAnd30DayBoundariesWithoutBeingSweptOrExcluded() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link link = linkRepository.save(new Link(
+                "https://example.com/pinned-survives-boundaries",
+                now.minus(1000, ChronoUnit.HOURS),
+                now.minus(60, ChronoUnit.DAYS)));
+        linkService.pinLink(link.getId());
+
+        // Re-read active and graveyard (which triggers the graveyard's automatic sweep) to prove
+        // the pinned row is never excluded/deleted despite its stale expiresAt implying it is long
+        // past both the 168-hour and 30-day thresholds (research.md §1, the correctness-critical case).
+        linkService.listActiveLinks();
+        linkService.listGraveyardLinks();
+
+        assertThat(linkRepository.findByPinnedTrueOrderByPinnedAtDesc()).extracting(Link::getId).contains(link.getId());
+        assertThat(linkRepository.findById(link.getId())).isPresent();
+    }
+
+    @Test
+    void listFavoriteLinksOrdersMultiplePinnedLinksByPinnedAtDescending() throws InterruptedException {
+        Link older = linkService.createLink("https://example.com/pinned-older");
+        linkService.pinLink(older.getId());
+        Thread.sleep(5);
+        Link newer = linkService.createLink("https://example.com/pinned-newer");
+        linkService.pinLink(newer.getId());
+
+        List<Link> favorites = linkService.listFavoriteLinks();
+
+        assertThat(favorites).extracting(Link::getId).containsExactly(newer.getId(), older.getId());
+    }
+
+    @Test
+    void listFavoriteLinksBackfillsMetadataForAPreExistingPinnedLinkWithNoAttemptYet() {
+        LinkMetadataFetcher mockFetcher = mock(LinkMetadataFetcher.class);
+        when(mockFetcher.fetchTitle(anyString())).thenReturn(Optional.of("Pinned Title"));
+        when(mockFetcher.buildFaviconUrl(anyString())).thenReturn("https://favicon.example/x");
+        LinkService serviceWithMock = new LinkService(linkRepository, mockFetcher);
+
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link preExisting = linkRepository.save(new Link("https://pre-existing-pinned.example.com", now, now.plusSeconds(3600)));
+        serviceWithMock.pinLink(preExisting.getId());
+        assertThat(linkRepository.findById(preExisting.getId()).orElseThrow().getTitleFetchedAt()).isNull();
+
+        List<Link> favorites = serviceWithMock.listFavoriteLinks();
+
+        Link backfilled = favorites.stream().filter(l -> l.getId().equals(preExisting.getId())).findFirst().orElseThrow();
+        assertThat(backfilled.getTitleFetchedAt()).isNotNull();
+        assertThat(backfilled.getPageTitle()).isEqualTo("Pinned Title");
+    }
+
+    @Test
+    void unpinningAPinnedLinkAssignsAFresh168HourCountdownIndependentOfSavedAtAndTimeSpentPinned() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        // savedAt and the pre-pin expiresAt are both deliberately unrelated to "now," and pinnedAt
+        // simulates the link having sat pinned for a very long time, proving the fresh countdown is
+        // computed purely from the moment of unpinning (FR-011).
+        Link link = linkRepository.save(new Link("https://example.com/long-pinned", now.minus(500, ChronoUnit.HOURS), now.minus(400, ChronoUnit.HOURS)));
+        link.setPinned(true);
+        link.setPinnedAt(now.minus(300, ChronoUnit.HOURS));
+        linkRepository.save(link);
+
+        linkService.unpinLink(link.getId());
+
+        Link reloaded = linkRepository.findById(link.getId()).orElseThrow();
+        assertThat(reloaded.isPinned()).isFalse();
+        assertThat(reloaded.getExpiresAt()).isAfter(now.plus(167, ChronoUnit.HOURS));
+        assertThat(reloaded.getExpiresAt()).isBefore(now.plus(169, ChronoUnit.HOURS));
+    }
+
+    @Test
+    void unpinningAnAlreadyUnpinnedLinkIsATrueNoOpExpiresAtUnchanged() {
+        Link link = linkService.createLink("https://example.com/already-unpinned");
+        Instant originalExpiresAt = link.getExpiresAt();
+
+        linkService.unpinLink(link.getId());
+
+        assertThat(linkRepository.findById(link.getId()).orElseThrow().getExpiresAt()).isEqualTo(originalExpiresAt);
+    }
+
+    @Test
+    void unpinningANonExistentIdIsANoOp() {
+        long nonExistentId = 999_999L;
+
+        linkService.unpinLink(nonExistentId);
+
+        assertThat(linkRepository.existsById(nonExistentId)).isFalse();
+    }
+
+    @Test
+    void deletingAPinnedLinkRemovesItEntirelyRegardlessOfPinnedState() {
+        Link link = linkService.createLink("https://example.com/to-delete-pinned");
+        linkService.pinLink(link.getId());
+        assertThat(linkRepository.findById(link.getId()).orElseThrow().isPinned()).isTrue();
+
+        linkService.deleteLink(link.getId());
+
+        assertThat(linkRepository.existsById(link.getId())).isFalse();
     }
 }

@@ -64,3 +64,30 @@ export async function deleteLink(id: number): Promise<void> {
     throw new ApiError('Failed to delete the link.')
   }
 }
+
+export async function fetchFavoriteLinks(): Promise<Link[]> {
+  const response = await fetch(`${BASE_URL}/favorites`)
+
+  if (!response.ok) {
+    throw new ApiError('Failed to load favorite links.')
+  }
+
+  const body = (await response.json()) as { links: Link[] }
+  return body.links
+}
+
+export async function pinLink(id: number): Promise<void> {
+  const response = await fetch(`${BASE_URL}/${id}/pin`, { method: 'POST' })
+
+  if (!response.ok) {
+    throw new ApiError('Failed to pin the link.')
+  }
+}
+
+export async function unpinLink(id: number): Promise<void> {
+  const response = await fetch(`${BASE_URL}/${id}/unpin`, { method: 'POST' })
+
+  if (!response.ok) {
+    throw new ApiError('Failed to unpin the link.')
+  }
+}

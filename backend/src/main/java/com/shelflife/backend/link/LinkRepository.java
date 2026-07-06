@@ -10,13 +10,17 @@ import java.util.List;
 
 public interface LinkRepository extends JpaRepository<Link, Long> {
 
-    List<Link> findByExpiresAtAfterOrderByExpiresAtAsc(Instant now);
+    List<Link> findByPinnedFalseAndExpiresAtAfterOrderByExpiresAtAsc(Instant now);
 
-    List<Link> findByExpiresAtLessThanEqualAndExpiresAtAfterOrderByExpiresAtAsc(
+    List<Link> findByPinnedFalseAndExpiresAtLessThanEqualAndExpiresAtAfterOrderByExpiresAtAsc(
             Instant activeThreshold, Instant graveyardThreshold);
 
+    // pinned = false is correctness-critical here (research.md §1): without it, a pinned link's
+    // stale expiresAt could let this sweep permanently delete it despite being pinned.
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Transactional
-    @Query("DELETE FROM Link l WHERE l.expiresAt <= :threshold")
-    void deleteByExpiresAtLessThanEqual(Instant threshold);
+    @Query("DELETE FROM Link l WHERE l.pinned = false AND l.expiresAt <= :threshold")
+    void deleteByPinnedFalseAndExpiresAtLessThanEqual(Instant threshold);
+
+    List<Link> findByPinnedTrueOrderByPinnedAtDesc();
 }

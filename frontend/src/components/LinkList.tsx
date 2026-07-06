@@ -8,7 +8,9 @@ interface LinkListProps {
   emptyIllustration?: ReactNode
   granularity?: 'fine' | 'coarse'
   openable?: boolean
+  pinned?: boolean
   onDeleted?: (id: number) => void
+  onPinToggled?: (id: number) => void
 }
 
 export function LinkList({
@@ -17,7 +19,9 @@ export function LinkList({
   emptyIllustration,
   granularity = 'fine',
   openable = false,
+  pinned = false,
   onDeleted,
+  onPinToggled,
 }: LinkListProps) {
   if (links.length === 0) {
     return (
@@ -37,7 +41,9 @@ export function LinkList({
           index={i + 1}
           granularity={granularity}
           openable={openable}
+          pinned={pinned}
           onDeleted={onDeleted}
+          onPinToggled={onPinToggled}
         />
       ))}
     </ul>

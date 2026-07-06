@@ -12,7 +12,12 @@ export function ActiveView() {
       <UrlCaptureForm onCaptured={refresh} />
       <div className="w-full max-w-2xl flex flex-col gap-4">
         <LinkCount links={links} />
-        <LinkList links={links} onDeleted={refresh} emptyIllustration={<EmptyActiveIllustration />} />
+        <LinkList
+          links={links}
+          onDeleted={refresh}
+          onPinToggled={refresh}
+          emptyIllustration={<EmptyActiveIllustration />}
+        />
       </div>
     </>
   )

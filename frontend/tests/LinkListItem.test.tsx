@@ -152,6 +152,58 @@ describe('LinkListItem', () => {
     expect(screen.getByText('2d left')).toBeInTheDocument()
   })
 
+  it('renders an unpinned card\'s pin control and invokes onPinToggled after a successful pin', async () => {
+    vi.useRealTimers()
+    const onPinToggled = vi.fn()
+    vi.spyOn(linksApi, 'pinLink').mockResolvedValue(undefined)
+
+    render(<LinkListItem link={link({ id: 9 })} onPinToggled={onPinToggled} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Pin link' }))
+
+    await waitFor(() => expect(onPinToggled).toHaveBeenCalledWith(9))
+  })
+
+  it('renders PinnedBadge instead of the countdown pill or progress bar when pinned', () => {
+    render(<LinkListItem link={link({ expiresAt: null })} pinned />)
+
+    expect(screen.getByText('Pinned')).toBeInTheDocument()
+    expect(screen.queryByTestId('hourglass-motif')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('remaining-time-bar')).not.toBeInTheDocument()
+  })
+
+  it("renders the pin control in its pinned state and calls onPinToggled after a successful unpin", async () => {
+    vi.useRealTimers()
+    const onPinToggled = vi.fn()
+    vi.spyOn(linksApi, 'unpinLink').mockResolvedValue(undefined)
+
+    render(<LinkListItem link={link({ id: 11, expiresAt: null })} pinned onPinToggled={onPinToggled} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Unpin link' }))
+
+    await waitFor(() => expect(onPinToggled).toHaveBeenCalledWith(11))
+  })
+
+  it('deletes a pinned card identically to a non-pinned card via arm-then-confirm', async () => {
+    vi.useRealTimers()
+    const onDeleted = vi.fn()
+    vi.spyOn(linksApi, 'deleteLink').mockResolvedValue(undefined)
+
+    render(<LinkListItem link={link({ id: 13, expiresAt: null })} pinned onDeleted={onDeleted} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Delete link' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm delete' }))
+
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledWith(13))
+  })
+
+  it('arms a pinned card\'s delete control without deleting on a single activation', () => {
+    const onDeleted = vi.fn()
+    render(<LinkListItem link={link({ id: 14, expiresAt: null })} pinned onDeleted={onDeleted} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete link' }))
+
+    expect(screen.getByRole('button', { name: 'Confirm delete' })).toBeInTheDocument()
+    expect(onDeleted).not.toHaveBeenCalled()
+  })
+
   it('truncates a very long title and a very long url instead of breaking the card layout', () => {
     const longTitle = 'A '.repeat(200).trim()
     const longUrl = 'https://example.com/' + 'a'.repeat(400)

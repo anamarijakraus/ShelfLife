@@ -27,7 +27,7 @@ class LinkRepositoryTest {
         Link expiresLatest = linkRepository.save(new Link(
                 "https://latest.example.com", now, now.plusSeconds(7200)));
 
-        List<Link> active = linkRepository.findByExpiresAtAfterOrderByExpiresAtAsc(now);
+        List<Link> active = linkRepository.findByPinnedFalseAndExpiresAtAfterOrderByExpiresAtAsc(now);
 
         assertThat(active).extracting(Link::getId)
                 .containsExactly(expiresSoonest.getId(), expiresMiddle.getId(), expiresLatest.getId());
@@ -42,7 +42,7 @@ class LinkRepositoryTest {
                 now.plusSeconds(60)
         ));
 
-        List<Link> active = linkRepository.findByExpiresAtAfterOrderByExpiresAtAsc(now);
+        List<Link> active = linkRepository.findByPinnedFalseAndExpiresAtAfterOrderByExpiresAtAsc(now);
 
         assertThat(active).extracting(Link::getId).contains(almostExpired.getId());
     }
@@ -56,7 +56,7 @@ class LinkRepositoryTest {
                 now
         ));
 
-        List<Link> active = linkRepository.findByExpiresAtAfterOrderByExpiresAtAsc(now);
+        List<Link> active = linkRepository.findByPinnedFalseAndExpiresAtAfterOrderByExpiresAtAsc(now);
 
         assertThat(active).extracting(Link::getId).doesNotContain(exactlyExpired.getId());
     }
@@ -70,7 +70,7 @@ class LinkRepositoryTest {
                 now.minusSeconds(60)
         ));
 
-        List<Link> active = linkRepository.findByExpiresAtAfterOrderByExpiresAtAsc(now);
+        List<Link> active = linkRepository.findByPinnedFalseAndExpiresAtAfterOrderByExpiresAtAsc(now);
 
         assertThat(active).extracting(Link::getId).doesNotContain(pastExpired.getId());
     }
@@ -87,7 +87,7 @@ class LinkRepositoryTest {
         Link deletedLatest = linkRepository.save(new Link(
                 "https://latest.example.com", now.minus(200, ChronoUnit.HOURS), now.minus(1, ChronoUnit.DAYS)));
 
-        List<Link> graveyard = linkRepository.findByExpiresAtLessThanEqualAndExpiresAtAfterOrderByExpiresAtAsc(
+        List<Link> graveyard = linkRepository.findByPinnedFalseAndExpiresAtLessThanEqualAndExpiresAtAfterOrderByExpiresAtAsc(
                 now, graveyardThreshold);
 
         assertThat(graveyard).extracting(Link::getId)
@@ -109,8 +109,8 @@ class LinkRepositoryTest {
                 "https://past-due.example.com", now.minus(200, ChronoUnit.HOURS),
                 now.minus(30, ChronoUnit.DAYS).minus(1, ChronoUnit.MINUTES)));
 
-        linkRepository.deleteByExpiresAtLessThanEqual(graveyardThreshold);
-        List<Link> graveyard = linkRepository.findByExpiresAtLessThanEqualAndExpiresAtAfterOrderByExpiresAtAsc(
+        linkRepository.deleteByPinnedFalseAndExpiresAtLessThanEqual(graveyardThreshold);
+        List<Link> graveyard = linkRepository.findByPinnedFalseAndExpiresAtLessThanEqualAndExpiresAtAfterOrderByExpiresAtAsc(
                 now, graveyardThreshold);
 
         assertThat(graveyard).extracting(Link::getId).containsExactly(almostDue.getId());
@@ -125,7 +125,7 @@ class LinkRepositoryTest {
                 "https://overdue.example.com", now.minus(200, ChronoUnit.HOURS), now.minus(31, ChronoUnit.DAYS)));
         long countBefore = linkRepository.count();
 
-        linkRepository.deleteByExpiresAtLessThanEqual(now.minus(30, ChronoUnit.DAYS));
+        linkRepository.deleteByPinnedFalseAndExpiresAtLessThanEqual(now.minus(30, ChronoUnit.DAYS));
 
         assertThat(linkRepository.count()).isEqualTo(countBefore - 1);
         assertThat(linkRepository.existsById(overdue.getId())).isFalse();
@@ -137,13 +137,13 @@ class LinkRepositoryTest {
         Instant graveyardThreshold = now.minus(30, ChronoUnit.DAYS);
 
         // Zero overdue rows: delete is a no-op.
-        linkRepository.deleteByExpiresAtLessThanEqual(graveyardThreshold);
+        linkRepository.deleteByPinnedFalseAndExpiresAtLessThanEqual(graveyardThreshold);
         assertThat(linkRepository.count()).isZero();
 
         // One overdue row.
         Link singleOverdue = linkRepository.save(new Link(
                 "https://single-overdue.example.com", now.minus(200, ChronoUnit.HOURS), now.minus(31, ChronoUnit.DAYS)));
-        linkRepository.deleteByExpiresAtLessThanEqual(graveyardThreshold);
+        linkRepository.deleteByPinnedFalseAndExpiresAtLessThanEqual(graveyardThreshold);
         assertThat(linkRepository.existsById(singleOverdue.getId())).isFalse();
 
         // Many overdue rows at once, alongside one that must survive.
@@ -154,7 +154,7 @@ class LinkRepositoryTest {
         Link stillInGraveyard = linkRepository.save(new Link(
                 "https://still-in-graveyard.example.com", now.minus(200, ChronoUnit.HOURS), now.minus(5, ChronoUnit.DAYS)));
 
-        linkRepository.deleteByExpiresAtLessThanEqual(graveyardThreshold);
+        linkRepository.deleteByPinnedFalseAndExpiresAtLessThanEqual(graveyardThreshold);
 
         assertThat(linkRepository.existsById(overdueA.getId())).isFalse();
         assertThat(linkRepository.existsById(overdueB.getId())).isFalse();
@@ -169,12 +169,72 @@ class LinkRepositoryTest {
         Link expired = linkRepository.save(new Link(
                 "https://expired-but-persisted.example.com", originalSavedAt, originalExpiresAt));
 
-        List<Link> active = linkRepository.findByExpiresAtAfterOrderByExpiresAtAsc(now);
+        List<Link> active = linkRepository.findByPinnedFalseAndExpiresAtAfterOrderByExpiresAtAsc(now);
         assertThat(active).extracting(Link::getId).doesNotContain(expired.getId());
 
         Link stillInStorage = linkRepository.findById(expired.getId()).orElseThrow();
         assertThat(stillInStorage.getUrl()).isEqualTo("https://expired-but-persisted.example.com");
         assertThat(stillInStorage.getSavedAt()).isEqualTo(originalSavedAt);
         assertThat(stillInStorage.getExpiresAt()).isEqualTo(originalExpiresAt);
+    }
+
+    @Test
+    void aPinnedLinkIsExcludedFromTheActiveListQueryEvenIfOtherwiseEligible() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link pinned = new Link("https://pinned-active.example.com", now, now.plusSeconds(3600));
+        pinned.setPinned(true);
+        pinned.setPinnedAt(now);
+        linkRepository.save(pinned);
+
+        List<Link> active = linkRepository.findByPinnedFalseAndExpiresAtAfterOrderByExpiresAtAsc(now);
+
+        assertThat(active).extracting(Link::getId).doesNotContain(pinned.getId());
+    }
+
+    @Test
+    void aPinnedLinkIsExcludedFromTheGraveyardListQueryEvenIfOtherwiseEligible() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Instant graveyardThreshold = now.minus(30, ChronoUnit.DAYS);
+        Link pinned = new Link("https://pinned-graveyard.example.com", now.minus(200, ChronoUnit.HOURS), now.minus(1, ChronoUnit.DAYS));
+        pinned.setPinned(true);
+        pinned.setPinnedAt(now);
+        linkRepository.save(pinned);
+
+        List<Link> graveyard = linkRepository.findByPinnedFalseAndExpiresAtLessThanEqualAndExpiresAtAfterOrderByExpiresAtAsc(
+                now, graveyardThreshold);
+
+        assertThat(graveyard).extracting(Link::getId).doesNotContain(pinned.getId());
+    }
+
+    @Test
+    void aPinnedLinkSurvivesTheAutomaticSweepEvenPastThe30DayThreshold() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Instant graveyardThreshold = now.minus(30, ChronoUnit.DAYS);
+        Link pinned = new Link("https://pinned-overdue.example.com", now.minus(200, ChronoUnit.HOURS), now.minus(60, ChronoUnit.DAYS));
+        pinned.setPinned(true);
+        pinned.setPinnedAt(now);
+        linkRepository.save(pinned);
+
+        linkRepository.deleteByPinnedFalseAndExpiresAtLessThanEqual(graveyardThreshold);
+
+        assertThat(linkRepository.findById(pinned.getId())).isPresent();
+    }
+
+    @Test
+    void findByPinnedTrueOrdersMultiplePinnedLinksByPinnedAtDescending() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link pinnedFirst = new Link("https://pinned-first.example.com", now, now.plusSeconds(3600));
+        pinnedFirst.setPinned(true);
+        pinnedFirst.setPinnedAt(now.minusSeconds(60));
+        linkRepository.save(pinnedFirst);
+
+        Link pinnedSecond = new Link("https://pinned-second.example.com", now, now.plusSeconds(3600));
+        pinnedSecond.setPinned(true);
+        pinnedSecond.setPinnedAt(now);
+        linkRepository.save(pinnedSecond);
+
+        List<Link> favorites = linkRepository.findByPinnedTrueOrderByPinnedAtDesc();
+
+        assertThat(favorites).extracting(Link::getId).containsExactly(pinnedSecond.getId(), pinnedFirst.getId());
     }
 }

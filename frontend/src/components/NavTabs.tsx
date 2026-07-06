@@ -1,4 +1,4 @@
-export type View = 'active' | 'graveyard'
+export type View = 'active' | 'graveyard' | 'favorites'
 
 interface NavTabsProps {
   active: View
@@ -29,6 +29,15 @@ export function NavTabs({ active, onSelect }: NavTabsProps) {
         onClick={() => onSelect('graveyard')}
       >
         Graveyard
+      </button>
+      <button
+        role="tab"
+        type="button"
+        aria-selected={active === 'favorites'}
+        className={`${BASE_PILL_CLASS} ${active === 'favorites' ? ACTIVE_PILL_CLASS : INACTIVE_PILL_CLASS}`}
+        onClick={() => onSelect('favorites')}
+      >
+        Favorites
       </button>
     </div>
   )

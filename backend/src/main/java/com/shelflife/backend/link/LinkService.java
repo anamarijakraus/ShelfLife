@@ -49,7 +49,7 @@ public class LinkService {
     }
 
     public List<Link> listActiveLinks() {
-        List<Link> links = linkRepository.findByExpiresAtAfterOrderByExpiresAtAsc(Instant.now());
+        List<Link> links = linkRepository.findByPinnedFalseAndExpiresAtAfterOrderByExpiresAtAsc(Instant.now());
         backfillMetadata(links);
         return links;
     }
@@ -58,9 +58,9 @@ public class LinkService {
         Instant now = Instant.now();
         Instant graveyardThreshold = now.minus(GRAVEYARD_DAYS, ChronoUnit.DAYS);
 
-        linkRepository.deleteByExpiresAtLessThanEqual(graveyardThreshold);
+        linkRepository.deleteByPinnedFalseAndExpiresAtLessThanEqual(graveyardThreshold);
 
-        List<Link> links = linkRepository.findByExpiresAtLessThanEqualAndExpiresAtAfterOrderByExpiresAtAsc(now, graveyardThreshold);
+        List<Link> links = linkRepository.findByPinnedFalseAndExpiresAtLessThanEqualAndExpiresAtAfterOrderByExpiresAtAsc(now, graveyardThreshold);
         backfillMetadata(links);
         return links;
     }
@@ -71,6 +71,38 @@ public class LinkService {
         if (linkRepository.existsById(id)) {
             linkRepository.deleteById(id);
         }
+    }
+
+    // True no-op if already pinned or the id doesn't exist: pinnedAt is deliberately NOT re-stamped
+    // in that case, since doing so would silently reorder the link within the favorites list on a
+    // repeated call (research.md §2, contracts/favorites-pin-api.md §2).
+    public void pinLink(Long id) {
+        linkRepository.findById(id).ifPresent(link -> {
+            if (!link.isPinned()) {
+                link.setPinned(true);
+                link.setPinnedAt(Instant.now());
+                linkRepository.save(link);
+            }
+        });
+    }
+
+    // True no-op if already unpinned or the id doesn't exist: expiresAt is deliberately NOT touched
+    // in that case, since recomputing it would silently re-arm a fresh countdown with no
+    // corresponding pinned -> unpinned transition having occurred (research.md §2).
+    public void unpinLink(Long id) {
+        linkRepository.findById(id).ifPresent(link -> {
+            if (link.isPinned()) {
+                link.setPinned(false);
+                link.setExpiresAt(Instant.now().truncatedTo(ChronoUnit.MILLIS).plus(EXPIRY_HOURS, ChronoUnit.HOURS));
+                linkRepository.save(link);
+            }
+        });
+    }
+
+    public List<Link> listFavoriteLinks() {
+        List<Link> links = linkRepository.findByPinnedTrueOrderByPinnedAtDesc();
+        backfillMetadata(links);
+        return links;
     }
 
     // Fans out metadata retrieval concurrently (virtual threads) across every link in the result set

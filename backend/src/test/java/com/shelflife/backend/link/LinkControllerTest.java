@@ -171,8 +171,11 @@ class LinkControllerTest {
         assertThat(response).doesNotContain("\"expiresAt\":\"" + soonToBeDeleted.getExpiresAt() + "\"");
     }
 
+    // Renamed from "...NoRescueResurrectOrPinEndpoint": Feature 4 intentionally and explicitly adds
+    // pin/unpin endpoints (see below), superseding that narrower claim, exactly as Feature 3 did for
+    // the analogous "no DELETE endpoint" assertion. PATCH/PUT remain unsupported everywhere.
     @Test
-    void controllerExposesOnlyGetPostAndDeleteNoRescueResurrectOrPinEndpoint() throws Exception {
+    void controllerExposesNoRescueOrResurrectEndpointViaPatchOrPut() throws Exception {
         mockMvc.perform(patch("/api/links/1")).andExpect(status().is4xxClientError());
         mockMvc.perform(put("/api/links/1")).andExpect(status().is4xxClientError());
         mockMvc.perform(patch("/api/links/graveyard/1")).andExpect(status().is4xxClientError());
@@ -207,6 +210,108 @@ class LinkControllerTest {
     void deleteNonExistentIdReturns204AsANoOpNotAnError() throws Exception {
         mockMvc.perform(delete("/api/links/999999"))
                 .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void pinningAnActiveLinkReturns204AndRemovesItFromTheActiveList() throws Exception {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link link = linkRepository.save(new Link("https://example.com/pin-active", now, now.plusSeconds(3600)));
+
+        mockMvc.perform(post("/api/links/" + link.getId() + "/pin"))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/links"))
+                .andExpect(jsonPath("$.links[?(@.id == " + link.getId() + ")]").isEmpty());
+    }
+
+    @Test
+    void pinningAGraveyardLinkReturns204AndRemovesItFromTheGraveyard() throws Exception {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link link = linkRepository.save(new Link(
+                "https://example.com/pin-graveyard", now.minus(200, ChronoUnit.HOURS), now.minus(1, ChronoUnit.DAYS)));
+
+        mockMvc.perform(post("/api/links/" + link.getId() + "/pin"))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/links/graveyard"))
+                .andExpect(jsonPath("$.links[?(@.id == " + link.getId() + ")]").isEmpty());
+    }
+
+    @Test
+    void pinningANonExistentIdReturns204AsANoOp() throws Exception {
+        mockMvc.perform(post("/api/links/999999/pin"))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void getFavoritesReturnsEmptyArrayWhenNothingPinned() throws Exception {
+        mockMvc.perform(get("/api/links/favorites"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.links").isArray())
+                .andExpect(jsonPath("$.links").isEmpty());
+    }
+
+    @Test
+    void getFavoritesReturnsPinnedLinksOrderedMostRecentlyPinnedFirstWithNullExpiresAt() throws Exception {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link olderPin = linkRepository.save(new Link("https://older-pin.example.com", now, now.plusSeconds(3600)));
+        Link newerPin = linkRepository.save(new Link("https://newer-pin.example.com", now, now.plusSeconds(3600)));
+
+        mockMvc.perform(post("/api/links/" + olderPin.getId() + "/pin")).andExpect(status().isNoContent());
+        Thread.sleep(5);
+        mockMvc.perform(post("/api/links/" + newerPin.getId() + "/pin")).andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/links/favorites"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.links.length()").value(2))
+                .andExpect(jsonPath("$.links[0].url").value("https://newer-pin.example.com"))
+                .andExpect(jsonPath("$.links[1].url").value("https://older-pin.example.com"))
+                .andExpect(jsonPath("$.links[0].expiresAt").value((Object) null))
+                .andExpect(jsonPath("$.links[1].expiresAt").value((Object) null));
+    }
+
+    @Test
+    void unpinningAPinnedLinkReturns204AndItReappearsInActiveListWithFreshExpiresAt() throws Exception {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link link = linkRepository.save(new Link("https://example.com/unpin-me", now, now.plusSeconds(3600)));
+        mockMvc.perform(post("/api/links/" + link.getId() + "/pin")).andExpect(status().isNoContent());
+
+        mockMvc.perform(post("/api/links/" + link.getId() + "/unpin"))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/links"))
+                .andExpect(jsonPath("$.links[?(@.id == " + link.getId() + ")]").isNotEmpty());
+        Link reloaded = linkRepository.findById(link.getId()).orElseThrow();
+        assertThat(reloaded.isPinned()).isFalse();
+        assertThat(reloaded.getExpiresAt()).isAfter(now.plus(167, ChronoUnit.HOURS));
+    }
+
+    @Test
+    void unpinningAnAlreadyUnpinnedOrNonExistentIdReturns204AsANoOp() throws Exception {
+        Link link = createUnpinnedLink();
+
+        mockMvc.perform(post("/api/links/" + link.getId() + "/unpin"))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(post("/api/links/999999/unpin"))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void deletingAPinnedLinkReturns204AndItIsAbsentFromFavorites() throws Exception {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        Link link = linkRepository.save(new Link("https://example.com/delete-pinned", now, now.plusSeconds(3600)));
+        mockMvc.perform(post("/api/links/" + link.getId() + "/pin")).andExpect(status().isNoContent());
+
+        mockMvc.perform(delete("/api/links/" + link.getId()))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/links/favorites"))
+                .andExpect(jsonPath("$.links[?(@.id == " + link.getId() + ")]").isEmpty());
+    }
+
+    private Link createUnpinnedLink() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        return linkRepository.save(new Link("https://example.com/already-unpinned", now, now.plusSeconds(3600)));
     }
 
     private static long idFrom(String json) {

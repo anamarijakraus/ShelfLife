@@ -2,13 +2,17 @@ import { useState } from 'react'
 import type { Link } from '../types/link'
 import { DeleteControl } from './DeleteControl'
 import { HourglassMotif, type UrgencyBand } from './HourglassMotif'
+import { PinControl } from './PinControl'
+import { PinnedBadge } from './PinnedBadge'
 
 interface LinkListItemProps {
   link: Link
   index?: number
   granularity?: 'fine' | 'coarse'
   openable?: boolean
+  pinned?: boolean
   onDeleted?: (id: number) => void
+  onPinToggled?: (id: number) => void
 }
 
 function FaviconFallback() {
@@ -112,11 +116,27 @@ const CARD_BG_CLASS: Record<'fine' | 'coarse', string> = {
   coarse: 'bg-[var(--color-graveyard-card)]',
 }
 
-export function LinkListItem({ link, index, granularity = 'fine', openable = false, onDeleted }: LinkListItemProps) {
+export function LinkListItem({
+  link,
+  index,
+  granularity = 'fine',
+  openable = false,
+  pinned = false,
+  onDeleted,
+  onPinToggled,
+}: LinkListItemProps) {
   const [faviconFailed, setFaviconFailed] = useState(false)
+
+  // A pinned card's link.expiresAt is always null (the countdown concept doesn't apply while
+  // pinned, per FR-006/research.md §5) — the countdown/urgency computations below are skipped
+  // entirely in that case, in favor of the static PinnedBadge.
   const remainingTime =
-    granularity === 'coarse' ? formatRemainingTimeCoarse(link.expiresAt) : formatRemainingTime(link.expiresAt)
-  const remainingFraction = computeRemainingFraction(link.expiresAt, granularity)
+    !pinned && link.expiresAt !== null
+      ? granularity === 'coarse'
+        ? formatRemainingTimeCoarse(link.expiresAt)
+        : formatRemainingTime(link.expiresAt)
+      : null
+  const remainingFraction = !pinned && link.expiresAt !== null ? computeRemainingFraction(link.expiresAt, granularity) : 0
   const urgencyBand = bandFromFraction(remainingFraction)
 
   const showFavicon = link.faviconUrl !== null && !faviconFailed
@@ -165,24 +185,31 @@ export function LinkListItem({ link, index, granularity = 'fine', openable = fal
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span
-            className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full py-0.5 pl-0.5 pr-3 text-sm font-medium text-primary-content ${PILL_CLASS_BY_BAND[urgencyBand]}`}
-          >
-            <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full border border-base-content/30 bg-[var(--color-badge-circle)]">
-              <HourglassMotif urgency={urgencyBand} />
+          {pinned ? (
+            <PinnedBadge />
+          ) : (
+            <span
+              className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full py-0.5 pl-0.5 pr-3 text-sm font-medium text-primary-content ${PILL_CLASS_BY_BAND[urgencyBand]}`}
+            >
+              <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full border border-base-content/30 bg-[var(--color-badge-circle)]">
+                <HourglassMotif urgency={urgencyBand} />
+              </span>
+              {remainingTime}
             </span>
-            {remainingTime}
-          </span>
+          )}
+          <PinControl linkId={link.id} pinned={pinned} onToggled={() => onPinToggled?.(link.id)} />
           <DeleteControl linkId={link.id} onDeleted={() => onDeleted?.(link.id)} />
         </div>
       </div>
-      <div className="h-1.5 w-full bg-black/10">
-        <div
-          data-testid="remaining-time-bar"
-          className={`h-full ${BAR_CLASS_BY_BAND[urgencyBand]}`}
-          style={{ width: `${Math.round(remainingFraction * 100)}%` }}
-        />
-      </div>
+      {!pinned && (
+        <div className="h-1.5 w-full bg-black/10">
+          <div
+            data-testid="remaining-time-bar"
+            className={`h-full ${BAR_CLASS_BY_BAND[urgencyBand]}`}
+            style={{ width: `${Math.round(remainingFraction * 100)}%` }}
+          />
+        </div>
+      )}
     </li>
   )
 }

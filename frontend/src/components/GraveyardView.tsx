@@ -16,6 +16,7 @@ export function GraveyardView() {
         granularity="coarse"
         openable
         onDeleted={refresh}
+        onPinToggled={refresh}
       />
     </div>
   )
